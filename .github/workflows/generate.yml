@@ -13,7 +13,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # 用系统自带 git 拉取代码，不依赖任何 actions/checkout，彻底告别 Node.js 报错
       - name: 原生拉取代码
         run: |
           git clone --depth 1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
@@ -29,20 +28,34 @@ jobs:
         env:
           QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}
           LOCATION_ID: ${{ secrets.LOCATION_ID }}
-        run: python generate.py
+        run: |
+          python generate.py
+          # 验证文件是否真的生成成功并打印文件大小
+          ls -lh output_preview.png weather.bin
 
       - name: 原生推送到 gh-pages 分支
         run: |
+          # 1. 先把生成的重要文件安全转移到系统临时目录
+          cp output_preview.png /tmp/weather.png
+          cp weather.bin /tmp/weather.bin
+
+          # 2. 配置 Git 信息
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # 创建独立的网页分支
+
+          # 3. 切换到干净的孤立分支
           git checkout --orphan gh-pages
-          
-          # 清理代码源文件，仅保留打包生成的预览图与固件
           git rm -rf .
-          mv output_preview.png weather.png
-          git add -f weather.png weather.bin
+
+          # 4. 把文件从临时目录移回仓库根目录
+          cp /tmp/weather.png ./weather.png
+          cp /tmp/weather.bin ./weather.bin
           
+          # 创建 .nojekyll，防止 GitHub Pages 过滤文件
+          touch .nojekyll
+
+          # 5. 强制添加并提交
+          git add -f weather.png weather.bin .nojekyll
+          git status
           git commit -m "Auto-update weather dashboard [skip ci]"
           git push -f origin gh-pages
