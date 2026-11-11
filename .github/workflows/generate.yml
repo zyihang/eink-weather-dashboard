@@ -2,25 +2,18 @@ name: Generate Daily Weather Image
 
 on:
   schedule:
-    # 每天 UTC 22:30 (即北京时间每天早上 06:30) 运行
+    # 每天 UTC 22:30 (北京时间每天 06:30) 运行
     - cron: '30 22 * * *'
   workflow_dispatch: # 支持手动点击测试
 
-# 配置 GitHub Pages 部署所需的权限
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  contents: write # 赋予推送代码分支的权限
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # actions/checkout@v4.1.7 的完整 40位 SHA
+      # actions/checkout@v4.1.7 完整 40 位 Commit SHA
       - name: 检出代码
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
 
@@ -37,26 +30,22 @@ jobs:
           LOCATION_ID: ${{ secrets.LOCATION_ID }}
         run: python generate.py
 
-      - name: 整理输出文件夹
+      # 使用原生 Git 命令推送，没有任何嵌套 Action，彻底避免 SHA 校验拦截
+      - name: 发布到 gh-pages 分支
         run: |
-          mkdir dist
-          cp output_preview.png dist/weather.png
-          cp weather.bin dist/weather.bin
-
-      # actions/upload-pages-artifact@v3.0.1 的完整 40位 SHA
-      - name: 上传构建产物至 Pages
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
-        with:
-          path: ./dist
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      # actions/deploy-pages@v4.0.5 的完整 40位 SHA
-      - name: 部署到 GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 临时创建一个只放生成结果的孤立分支
+          git checkout --orphan gh-pages
+          
+          # 清除源码，只保留生成的图片和数据文件
+          git rm -rf .
+          git add -f output_preview.png weather.bin
+          
+          # 重命名文件以便通过标准直链访问
+          mv output_preview.png weather.png
+          git add weather.png
+          
+          git commit -m "Auto-update weather dashboard [skip ci]"
+          git push -f origin gh-pages
