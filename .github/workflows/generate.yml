@@ -4,20 +4,21 @@ on:
   schedule:
     # 每天 UTC 22:30 (北京时间每天 06:30) 运行
     - cron: '30 22 * * *'
-  workflow_dispatch: # 支持手动点击测试
+  workflow_dispatch:
 
 permissions:
-  contents: write # 赋予推送代码分支的权限
+  contents: write
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # actions/checkout@v4.1.7 完整 40 位 Commit SHA
-      - name: 检出代码
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      # 用系统自带 git 拉取代码，不依赖任何 actions/checkout，彻底告别 Node.js 报错
+      - name: 原生拉取代码
+        run: |
+          git clone --depth 1 https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
 
-      - name: 安装 Python 与中文字体
+      - name: 安装 Python 运行环境与中文字体
         run: |
           sudo apt-get update
           sudo apt-get install -y fonts-wqy-microhei
@@ -30,22 +31,18 @@ jobs:
           LOCATION_ID: ${{ secrets.LOCATION_ID }}
         run: python generate.py
 
-      # 使用原生 Git 命令推送，没有任何嵌套 Action，彻底避免 SHA 校验拦截
-      - name: 发布到 gh-pages 分支
+      - name: 原生推送到 gh-pages 分支
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 临时创建一个只放生成结果的孤立分支
+          # 创建独立的网页分支
           git checkout --orphan gh-pages
           
-          # 清除源码，只保留生成的图片和数据文件
+          # 清理代码源文件，仅保留打包生成的预览图与固件
           git rm -rf .
-          git add -f output_preview.png weather.bin
-          
-          # 重命名文件以便通过标准直链访问
           mv output_preview.png weather.png
-          git add weather.png
+          git add -f weather.png weather.bin
           
           git commit -m "Auto-update weather dashboard [skip ci]"
           git push -f origin gh-pages
