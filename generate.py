@@ -44,8 +44,8 @@ def get_lunar_and_solar_term():
     return lunar_str
 
 def fetch_weather():
-    now_url = f"https://devapi.qweather.com/v7/weather/now?location={LOCATION_ID}&key={QWEATHER_KEY}"
-    daily_url = f"https://devapi.qweather.com/v7/weather/3d?location={LOCATION_ID}&key={QWEATHER_KEY}"
+    now_url = f"m65u9yw236.re.qweatherapi.com/v7/weather/now?location={LOCATION_ID}&key={QWEATHER_KEY}"
+    daily_url = f"m65u9yw236.re.qweatherapi.com/v7/weather/3d?location={LOCATION_ID}&key={QWEATHER_KEY}"
     
     try:
         now_data = requests.get(now_url, timeout=10).json().get("now", {})
