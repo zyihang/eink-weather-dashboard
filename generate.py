@@ -10,7 +10,7 @@ from lunardate import LunarDate
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 QWEATHER_KEY = os.getenv("QWEATHER_KEY")
-LOCATION_ID = os.getenv("LOCATION_ID", "101070211") # 默认北京
+LOCATION_ID = os.getenv("LOCATION_ID", "101010100") # 默认北京
 
 def get_lunar_and_solar_term():
     """纯本地离线精准计算农历月日、干支生肖与二十四节气"""
