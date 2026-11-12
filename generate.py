@@ -49,16 +49,22 @@ def fetch_weather():
     print(f"🔍 当前读取到的 LOCATION_ID: '{LOCATION_ID}'")
     
     if not QWEATHER_KEY:
-        print("⚠️ 警告: 未检测到环境变量 QWEATHER_KEY！")
+        print("⚠️ 警告: 未检测到环境变量 QWEATHER_KEY，请检查 Secrets 配置！")
 
-    # 1. 自动反查城市和区域名称
-    city_name = "未知城市"
+    # 1. 自动反查城市和区域名称（专属域名需带 /geo，并提供通用公共域名备用）
+    city_name = "本地"
     try:
-        geo_url = f"https://m65u9yw236.re.qweatherapi.com/v2/city/lookup?location={LOCATION_ID}&key={QWEATHER_KEY}"
+        geo_url = f"https://m65u9yw236.re.qweatherapi.com/geo/v2/city/lookup?location={LOCATION_ID}&key={QWEATHER_KEY}"
         r_geo = requests.get(geo_url, timeout=10).json()
+
+        # 如果专属域名没有开通 Geo 服务，自动退回到官方通用 GeoAPI
+        if r_geo.get("code") != "200":
+            backup_geo_url = f"https://geoapi.qweather.com/v2/city/lookup?location={LOCATION_ID}&key={QWEATHER_KEY}"
+            r_geo = requests.get(backup_geo_url, timeout=10).json()
+
         if r_geo.get("code") == "200" and r_geo.get("location"):
             loc = r_geo["location"][0]
-            adm2 = loc.get("adm2", "") # 上级城市/市级，如：大连市
+            adm2 = loc.get("adm2", "")     # 上级市，如：大连
             district = loc.get("name", "") # 区县，如：普兰店
             
             if adm2 and adm2 != district:
@@ -67,9 +73,9 @@ def fetch_weather():
                 city_name = district
             print(f"📍 成功识别城市区域: {city_name}")
         else:
-            print(f"⚠️ 未获取到城市名称，接口响应: {r_geo}")
+            print(f"⚠️ 城市查询返回非 200，响应内容: {r_geo}")
     except Exception as e:
-        print(f"获取城市信息发生异常: {e}")
+        print(f"❌ 获取城市信息发生网络异常: {e}")
 
     # 2. 获取实时天气与3天预报
     now_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/now?location={LOCATION_ID}&key={QWEATHER_KEY}"
@@ -98,7 +104,7 @@ def fetch_weather():
     except Exception as e:
         print(f"❌ API 网络请求异常: {e}")
 
-    # 兜底数据
+    # 兜底保障
     if not now_data:
         print("⚠️ 启用实时天气兜底数据")
         now_data = {"temp": "24", "text": "晴", "humidity": "42", "windScale": "2", "feelsLike": "23"}
