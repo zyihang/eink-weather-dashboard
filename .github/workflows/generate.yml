@@ -13,47 +13,44 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: 原生拉取代码
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
 
-      - name: 设置 Python 环境
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: 安装 Cairo 渲染器、顶级中文字体与 Python 依赖
+      - name: 安装依赖与字体
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcairo2-dev fonts-noto-cjk
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          sudo apt-get install -y libcairo2-dev fonts-noto-cjk python3-pip
+          python3 -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then python3 -m pip install -r requirements.txt; fi
 
       - name: 运行生成脚本
         env:
           QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}
           LOCATION_ID: ${{ secrets.LOCATION_ID }}
-        run: python generate.py
+        run: python3 generate.py
 
-      - name: 检查文件生成情况 (排查利器)
+      - name: 检查文件生成情况
         run: |
           echo "=== 检查本地文件 ==="
-          ls -la latest.png || echo "❌ 警告: latest.png 并不存在！"
-          ls -la archive/ || echo "❌ 警告: archive 目录不存在！"
+          ls -lh latest.png || echo "❌ 警告: latest.png 并不存在！"
+          ls -lh archive/ || echo "❌ 警告: archive 目录不存在！"
 
       - name: 提交图片到仓库
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # 使用 -f 强制添加，防止被 .gitignore 意外拦截
+          # 1. 强制添加，防止 .gitignore 拦截图片
           git add -f latest.png archive/
-          
+
+          # 2. 检查暂存区并提交推送到当前分支
           if git diff --staged --quiet; then
-            echo "⚠️ 暂存区无变动（可能图片内容与昨天完全一致，或未成功添加）"
+            echo "⚠️ 暂存区无变动（图片无变化）"
           else
             git commit -m "自动更新天气图片 [skip ci]"
-            git push origin HEAD:${{ github.ref_name }}
+            # 获取当前分支名并推送
+            CURRENT_BRANCH=$(git branch --show-current)
+            [ -z "$CURRENT_BRANCH" ] && CURRENT_BRANCH="main"
+            git push origin HEAD:${CURRENT_BRANCH}
             echo "=== ✅ 图片与日期文件夹提交成功 ==="
           fi
