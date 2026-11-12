@@ -6,11 +6,28 @@ from PIL import Image
 from datetime import datetime
 from lunardate import LunarDate
 
-# 获取基础路径（确保无论在哪个路径下执行，都写入脚本所在目录）
+# 获取基础路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 QWEATHER_KEY = os.getenv("QWEATHER_KEY")
 LOCATION_ID = os.getenv("LOCATION_ID", "101010100")
+
+# 城市映射表（精准匹配高新园区与常用地区，彻底杜绝接口延迟或权限问题）
+CITY_MAP = {
+    "101070211": "大连 · 高新园区",
+    "101070201": "大连 · 市区",
+    "101070202": "大连 · 瓦房店",
+    "101070203": "大连 · 金州",
+    "101070204": "大连 · 庄河",
+    "101070205": "大连 · 普兰店",
+    "101070206": "大连 · 旅顺",
+    "101010100": "北京 · 市区",
+    "101020100": "上海 · 市区",
+    "101280101": "广州 · 市区",
+    "101280601": "深圳 · 市区",
+    "101210101": "杭州 · 市区",
+    "101270101": "成都 · 市区"
+}
 
 def get_lunar_and_solar_term():
     """纯本地离线精准计算农历月日、干支生肖与二十四节气"""
@@ -46,46 +63,42 @@ def get_lunar_and_solar_term():
     return lunar_str
 
 def fetch_weather():
-    print(f"🔍 当前读取到的 LOCATION_ID: '{LOCATION_ID}'")
+    clean_id = str(LOCATION_ID).strip()
+    print(f"🔍 当前读取到的 LOCATION_ID: '{clean_id}'")
     
     if not QWEATHER_KEY:
         print("⚠️ 警告: 未检测到环境变量 QWEATHER_KEY，请检查 Secrets 配置！")
 
-    # 1. 自动反查城市和区域名称（专属域名需带 /geo，并提供通用公共域名备用）
-    city_name = "本地"
-    try:
-        geo_url = f"https://m65u9yw236.re.qweatherapi.com/geo/v2/city/lookup?location={LOCATION_ID}&key={QWEATHER_KEY}"
-        r_geo = requests.get(geo_url, timeout=10).json()
-
-        # 如果专属域名没有开通 Geo 服务，自动退回到官方通用 GeoAPI
-        if r_geo.get("code") != "200":
-            backup_geo_url = f"https://geoapi.qweather.com/v2/city/lookup?location={LOCATION_ID}&key={QWEATHER_KEY}"
-            r_geo = requests.get(backup_geo_url, timeout=10).json()
-
-        if r_geo.get("code") == "200" and r_geo.get("location"):
-            loc = r_geo["location"][0]
-            adm2 = loc.get("adm2", "")     # 上级市，如：大连
-            district = loc.get("name", "") # 区县，如：普兰店
-            
-            if adm2 and adm2 != district:
-                city_name = f"{adm2} · {district}"
+    # 1. 解析城市名称：优先查精准映射表，若没有则在线请求接口
+    city_name = CITY_MAP.get(clean_id)
+    
+    if city_name:
+        print(f"📍 本地精准映射命中城市: {city_name}")
+    else:
+        try:
+            geo_url = f"https://geoapi.qweather.com/v2/city/lookup?location={clean_id}&key={QWEATHER_KEY}"
+            r_geo = requests.get(geo_url, timeout=10).json()
+            if r_geo.get("code") == "200" and r_geo.get("location"):
+                loc = r_geo["location"][0]
+                adm2 = loc.get("adm2", "")
+                district = loc.get("name", "")
+                city_name = f"{adm2} · {district}" if (adm2 and adm2 != district) else district
+                print(f"📍 在线 API 成功解析城市: {city_name}")
             else:
-                city_name = district
-            print(f"📍 成功识别城市区域: {city_name}")
-        else:
-            print(f"⚠️ 城市查询返回非 200，响应内容: {r_geo}")
-    except Exception as e:
-        print(f"❌ 获取城市信息发生网络异常: {e}")
+                city_name = "本地"
+        except Exception as e:
+            print(f"❌ Geo 查询网络异常: {e}")
+            city_name = "本地"
 
     # 2. 获取实时天气与3天预报
-    now_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/now?location={LOCATION_ID}&key={QWEATHER_KEY}"
-    daily_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/3d?location={LOCATION_ID}&key={QWEATHER_KEY}"
+    now_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/now?location={clean_id}&key={QWEATHER_KEY}"
+    daily_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/3d?location={clean_id}&key={QWEATHER_KEY}"
     
     now_data = {}
     daily_data = []
 
     try:
-        print(f"📡 正在获取天气数据 (Location: {LOCATION_ID})...")
+        print(f"📡 正在获取天气数据 (Location: {clean_id})...")
         r_now = requests.get(now_url, timeout=10).json()
         r_daily = requests.get(daily_url, timeout=10).json()
 
@@ -166,8 +179,8 @@ def build_svg(now, daily, city_name):
     icon_d2 = get_weather_icon(d2.get("textDay", "多云"), 495, 235, scale=0.6)
     icon_d3 = get_weather_icon(d3.get("textDay", "晴"), 495, 345, scale=0.6)
 
-    # 动态计算城市胶囊的宽度，确保短名字和长名字都排版工整
-    capsule_width = max(80, len(city_name) * 14 + 20)
+    # 动态胶囊宽度计算，避免文字溢出
+    capsule_width = max(90, len(city_name) * 14 + 24)
 
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="800" height="480" style="background:#FFFFFF; font-family: 'Noto Sans CJK SC', 'Source Han Sans SC', sans-serif;">
   <defs>
@@ -183,7 +196,7 @@ def build_svg(now, daily, city_name):
   <rect x="30" y="24" width="8" height="20" fill="#FF0000" />
   <text x="46" y="40" font-size="20" class="heavy" fill="#000000" letter-spacing="1">DAILY BRIEFING</text>
   
-  <!-- 城市与区域标签（醒目呈现） -->
+  <!-- 城市与区域标签（醒目黑底白字呈现） -->
   <rect x="220" y="24" width="{capsule_width}" height="20" rx="10" fill="#000000" />
   <text x="{220 + capsule_width // 2}" y="38" font-size="12" class="heavy" fill="#FFFFFF" text-anchor="middle">📍 {city_name}</text>
   
