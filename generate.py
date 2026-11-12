@@ -1,9 +1,13 @@
 import os
+import sys
 import requests
 import cairosvg
 from PIL import Image
 from datetime import datetime
 from lunardate import LunarDate
+
+# 获取基础路径（确保不管在哪个目录下执行，都在脚本所在目录生成文件）
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 QWEATHER_KEY = os.getenv("QWEATHER_KEY")
 LOCATION_ID = os.getenv("LOCATION_ID", "101010100") # 默认北京
@@ -44,20 +48,47 @@ def get_lunar_and_solar_term():
     return lunar_str
 
 def fetch_weather():
+    if not QWEATHER_KEY:
+        print("⚠️ 警告: 未检测到环境变量 QWEATHER_KEY，请检查 Secrets 配置！")
+
     now_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/now?location={LOCATION_ID}&key={QWEATHER_KEY}"
     daily_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/3d?location={LOCATION_ID}&key={QWEATHER_KEY}"
     
+    now_data = {}
+    daily_data = []
+
     try:
-        now_data = requests.get(now_url, timeout=10).json().get("now", {})
-        daily_data = requests.get(daily_url, timeout=10).json().get("daily", [])
+        print(f"📡 正在获取天气数据 (Location: {LOCATION_ID})...")
+        r_now = requests.get(now_url, timeout=10).json()
+        r_daily = requests.get(daily_url, timeout=10).json()
+
+        if r_now.get("code") == "200":
+            now_data = r_now.get("now", {})
+            print("✅ 实时天气获取成功")
+        else:
+            print(f"❌ 实时天气接口异常: {r_now}")
+
+        if r_daily.get("code") == "200":
+            daily_data = r_daily.get("daily", [])
+            print("✅ 三天天气预报获取成功")
+        else:
+            print(f"❌ 预报天气接口异常: {r_daily}")
+
     except Exception as e:
-        print(f"API 获取异常: {e}")
+        print(f"❌ API 网络请求异常: {e}")
+
+    # 如果接口失败，使用兜底模拟数据，保证图片能够渲染生成
+    if not now_data:
+        print("⚠️ 启用实时天气兜底数据")
         now_data = {"temp": "24", "text": "晴", "humidity": "42", "windScale": "2", "feelsLike": "23"}
+    if not daily_data:
+        print("⚠️ 启用天气预报兜底数据")
         daily_data = [
-            {"fxDate": "2025-05-19", "textDay": "晴", "tempMax": "27", "tempMin": "16", "sunrise": "05:08", "sunset": "19:28"},
-            {"fxDate": "2025-05-20", "textDay": "多云", "tempMax": "25", "tempMin": "15"},
-            {"fxDate": "2025-05-21", "textDay": "小雨", "tempMax": "21", "tempMin": "14"}
+            {"fxDate": datetime.now().strftime("%Y-%m-%d"), "textDay": "晴", "tempMax": "27", "tempMin": "16", "sunrise": "05:08", "sunset": "19:28"},
+            {"fxDate": "未来", "textDay": "多云", "tempMax": "25", "tempMin": "15"},
+            {"fxDate": "未来", "textDay": "小雨", "tempMax": "21", "tempMin": "14"}
         ]
+        
     return now_data, daily_data
 
 def get_weather_icon(text, x, y, scale=1.0):
@@ -218,22 +249,32 @@ def build_svg(now, daily):
     return svg
 
 def render_image(svg_str):
-    cairosvg.svg2png(bytestring=svg_str.encode('utf-8'), write_to='raw.png')
+    raw_path = os.path.join(BASE_DIR, 'raw.png')
+    latest_path = os.path.join(BASE_DIR, 'latest.png')
     
-    img = Image.open('raw.png').convert('RGB')
+    print("🎨 正在渲染 SVG 为 PNG 图像...")
+    cairosvg.svg2png(bytestring=svg_str.encode('utf-8'), write_to=raw_path)
+    
+    img = Image.open(raw_path).convert('RGB')
     palette = [0,0,0,  255,255,255,  255,204,0,  255,0,0] + [0]*(768-12)
     pal_img = Image.new("P", (1, 1))
     pal_img.putpalette(palette)
     
     quantized = img.quantize(palette=pal_img, dither=Image.Dither.NONE)
     
-    today_folder = os.path.join("archive", datetime.now().strftime("%Y-%m-%d"))
+    today_folder = os.path.join(BASE_DIR, "archive", datetime.now().strftime("%Y-%m-%d"))
     os.makedirs(today_folder, exist_ok=True)
-    quantized.save(os.path.join(today_folder, "weather.png"))
-    quantized.save("latest.png")
+    archive_path = os.path.join(today_folder, "weather.png")
     
-    if os.path.exists("raw.png"):
-        os.remove("raw.png")
+    quantized.save(archive_path)
+    quantized.save(latest_path)
+    
+    if os.path.exists(raw_path):
+        os.remove(raw_path)
+
+    print("🎉 图片生成完毕！")
+    print(f"👉 最新图路径: {latest_path}")
+    print(f"👉 归档图路径: {archive_path}")
 
 if __name__ == "__main__":
     now_d, daily_d = fetch_weather()
