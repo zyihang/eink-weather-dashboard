@@ -6,18 +6,17 @@ from PIL import Image
 from datetime import datetime
 from lunardate import LunarDate
 
-# 获取基础路径（确保不管在哪个目录下执行，都在脚本所在目录生成文件）
+# 获取基础路径（确保无论在哪个路径下执行，都写入脚本所在目录）
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 QWEATHER_KEY = os.getenv("QWEATHER_KEY")
-LOCATION_ID = os.getenv("LOCATION_ID", "101010100") # 默认北京
+LOCATION_ID = os.getenv("LOCATION_ID", "101010100")
 
 def get_lunar_and_solar_term():
     """纯本地离线精准计算农历月日、干支生肖与二十四节气"""
     now = datetime.now()
     lunar = LunarDate.fromSolarDate(now.year, now.month, now.day)
     
-    # 干支生肖
     gan = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
     zhi = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
     zodiac = ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"]
@@ -32,7 +31,6 @@ def get_lunar_and_solar_term():
     ]
     lunar_str = f"农历 {gz_year}{months[lunar.month - 1]}月{days[lunar.day - 1]}"
 
-    # 二十四节气公历近似对应表
     solar_terms = {
         (1, 5): "小寒", (1, 20): "大寒", (2, 4): "立春", (2, 19): "雨水",
         (3, 5): "惊蛰", (3, 20): "春分", (4, 4): "清明", (4, 20): "谷雨",
@@ -48,9 +46,32 @@ def get_lunar_and_solar_term():
     return lunar_str
 
 def fetch_weather():
+    print(f"🔍 当前读取到的 LOCATION_ID: '{LOCATION_ID}'")
+    
     if not QWEATHER_KEY:
-        print("⚠️ 警告: 未检测到环境变量 QWEATHER_KEY，请检查 Secrets 配置！")
+        print("⚠️ 警告: 未检测到环境变量 QWEATHER_KEY！")
 
+    # 1. 自动反查城市和区域名称
+    city_name = "未知城市"
+    try:
+        geo_url = f"https://m65u9yw236.re.qweatherapi.com/v2/city/lookup?location={LOCATION_ID}&key={QWEATHER_KEY}"
+        r_geo = requests.get(geo_url, timeout=10).json()
+        if r_geo.get("code") == "200" and r_geo.get("location"):
+            loc = r_geo["location"][0]
+            adm2 = loc.get("adm2", "") # 上级城市/市级，如：大连市
+            district = loc.get("name", "") # 区县，如：普兰店
+            
+            if adm2 and adm2 != district:
+                city_name = f"{adm2} · {district}"
+            else:
+                city_name = district
+            print(f"📍 成功识别城市区域: {city_name}")
+        else:
+            print(f"⚠️ 未获取到城市名称，接口响应: {r_geo}")
+    except Exception as e:
+        print(f"获取城市信息发生异常: {e}")
+
+    # 2. 获取实时天气与3天预报
     now_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/now?location={LOCATION_ID}&key={QWEATHER_KEY}"
     daily_url = f"https://m65u9yw236.re.qweatherapi.com/v7/weather/3d?location={LOCATION_ID}&key={QWEATHER_KEY}"
     
@@ -64,7 +85,7 @@ def fetch_weather():
 
         if r_now.get("code") == "200":
             now_data = r_now.get("now", {})
-            print("✅ 实时天气获取成功")
+            print(f"✅ 实时天气获取成功: 当前温度 {now_data.get('temp')}℃, 天气 {now_data.get('text')}")
         else:
             print(f"❌ 实时天气接口异常: {r_now}")
 
@@ -77,7 +98,7 @@ def fetch_weather():
     except Exception as e:
         print(f"❌ API 网络请求异常: {e}")
 
-    # 如果接口失败，使用兜底模拟数据，保证图片能够渲染生成
+    # 兜底数据
     if not now_data:
         print("⚠️ 启用实时天气兜底数据")
         now_data = {"temp": "24", "text": "晴", "humidity": "42", "windScale": "2", "feelsLike": "23"}
@@ -89,7 +110,7 @@ def fetch_weather():
             {"fxDate": "未来", "textDay": "小雨", "tempMax": "21", "tempMin": "14"}
         ]
         
-    return now_data, daily_data
+    return now_data, daily_data, city_name
 
 def get_weather_icon(text, x, y, scale=1.0):
     if "晴" in text:
@@ -114,7 +135,7 @@ def get_weather_icon(text, x, y, scale=1.0):
             <circle cx="40" cy="40" r="20" fill="#FFCC00" stroke="#000000" stroke-width="3"/>
         </g>'''
 
-def build_svg(now, daily):
+def build_svg(now, daily, city_name):
     now_dt = datetime.now()
     today_str = now_dt.strftime("%Y.%m.%d")
     weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
@@ -127,7 +148,6 @@ def build_svg(now, daily):
     humidity = str(now.get("humidity", "45"))
     wind = str(now.get("windScale", "2"))
     
-    # 提取三天数据与日落数据
     d1 = daily[0] if len(daily) > 0 else {}
     d2 = daily[1] if len(daily) > 1 else {}
     d3 = daily[2] if len(daily) > 2 else {}
@@ -139,6 +159,9 @@ def build_svg(now, daily):
     icon_d1 = get_weather_icon(d1.get("textDay", "晴"), 495, 125, scale=0.6)
     icon_d2 = get_weather_icon(d2.get("textDay", "多云"), 495, 235, scale=0.6)
     icon_d3 = get_weather_icon(d3.get("textDay", "晴"), 495, 345, scale=0.6)
+
+    # 动态计算城市胶囊的宽度，确保短名字和长名字都排版工整
+    capsule_width = max(80, len(city_name) * 14 + 20)
 
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="800" height="480" style="background:#FFFFFF; font-family: 'Noto Sans CJK SC', 'Source Han Sans SC', sans-serif;">
   <defs>
@@ -153,7 +176,10 @@ def build_svg(now, daily):
   <line x1="30" y1="52" x2="770" y2="52" stroke="#000000" stroke-width="2"/>
   <rect x="30" y="24" width="8" height="20" fill="#FF0000" />
   <text x="46" y="40" font-size="20" class="heavy" fill="#000000" letter-spacing="1">DAILY BRIEFING</text>
-  <text x="235" y="40" font-size="14" class="muted">气象与环境晨报</text>
+  
+  <!-- 城市与区域标签（醒目呈现） -->
+  <rect x="220" y="24" width="{capsule_width}" height="20" rx="10" fill="#000000" />
+  <text x="{220 + capsule_width // 2}" y="38" font-size="12" class="heavy" fill="#FFFFFF" text-anchor="middle">📍 {city_name}</text>
   
   <!-- 右上角：公历与农历节气 -->
   <text x="770" y="28" font-size="15" class="bold" fill="#000000" text-anchor="end">{today_str} · {week_str}</text>
@@ -162,8 +188,9 @@ def build_svg(now, daily):
   <!-- 2. 主天气卡片 (Bento 大卡) -->
   <rect x="30" y="70" width="425" height="225" rx="16" fill="#FFFFFF" stroke="#000000" stroke-width="2.5"/>
   
+  <!-- 当前天气状态小胶囊 -->
   <rect x="50" y="88" width="72" height="25" rx="12.5" fill="#FFCC00"/>
-  <text x="62" y="105" font-size="13" class="heavy" fill="#000000">{text}</text>
+  <text x="86" y="105" font-size="13" class="heavy" fill="#000000" text-anchor="middle">{text}</text>
   <text x="132" y="105" font-size="13" class="muted">体感 {feels_like}°C</text>
 
   <!-- 超大温度 -->
@@ -179,21 +206,16 @@ def build_svg(now, daily):
   <text x="120" y="268" font-size="17" class="heavy" fill="#000000">{wind} 级</text>
 
   <text x="195" y="244" font-size="12" class="muted">紫外线</text>
-  <text x="195" y="268" font-size="17" class="heavy" fill="#FF0000">强</text>
+  <text x="195" y="268" font-size="17" class="heavy" fill="#FF0000">正常</text>
 
-  <!-- 日出日落小罗盘部件 (Sun Compass) -->
+  <!-- 日出日落小罗盘部件 -->
   <g transform="translate(285, 230)">
-    <!-- 罗盘底虚线弧形轨迹 -->
     <path d="M 10 38 A 45 45 0 0 1 125 38" fill="none" stroke="#000000" stroke-width="1.5" stroke-dasharray="3,3" />
     <line x1="5" y1="38" x2="130" y2="38" stroke="#000000" stroke-width="1" />
-    
-    <!-- 太阳小图标置于地平线上方轨迹 -->
     <circle cx="68" cy="12" r="5" fill="#FFCC00" stroke="#000000" stroke-width="1.5"/>
     <line x1="68" y1="4" x2="68" y2="2" stroke="#FFCC00" stroke-width="2"/>
     <line x1="60" y1="12" x2="58" y2="12" stroke="#FFCC00" stroke-width="2"/>
     <line x1="76" y1="12" x2="78" y2="12" stroke="#FFCC00" stroke-width="2"/>
-
-    <!-- 日出日落时间文字 -->
     <text x="10" y="52" font-size="11" class="bold" fill="#000000">🌅 {sunrise}</text>
     <text x="125" y="52" font-size="11" class="bold" fill="#000000" text-anchor="end">🌇 {sunset}</text>
   </g>
@@ -201,15 +223,12 @@ def build_svg(now, daily):
   <!-- 3. 左下：东方雅韵金句与提醒笺条 -->
   <rect x="30" y="312" width="425" height="143" rx="16" fill="#FBFBFB" stroke="#000000" stroke-width="2"/>
   
-  <!-- 红色中式印章 -->
   <rect x="50" y="328" width="22" height="22" rx="4" fill="#FF0000" />
   <text x="54" y="344" font-size="14" class="heavy" fill="#FFFFFF">箴</text>
   
-  <!-- 主金句：心平气和 -->
   <text x="80" y="345" font-size="17" class="heavy" fill="#000000" letter-spacing="2">心平气和</text>
   <text x="170" y="344" font-size="12" class="muted">/ 平常心是道，从容对晨昏</text>
 
-  <!-- 生活小语 -->
   <line x1="50" y1="362" x2="435" y2="362" stroke="#EEEEEE" stroke-width="1"/>
   <circle cx="56" cy="385" r="3.5" fill="#FF0000"/>
   <text x="68" y="390" font-size="13" class="bold" fill="#000000">气温舒适，宜饮茶静心，缓步当车。</text>
@@ -277,6 +296,6 @@ def render_image(svg_str):
     print(f"👉 归档图路径: {archive_path}")
 
 if __name__ == "__main__":
-    now_d, daily_d = fetch_weather()
-    svg_str = build_svg(now_d, daily_d)
+    now_d, daily_d, city = fetch_weather()
+    svg_str = build_svg(now_d, daily_d, city)
     render_image(svg_str)
