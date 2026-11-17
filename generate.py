@@ -5,7 +5,7 @@ import requests
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
-# 引入中国农历库
+# 引入中国农历库 borax
 from borax.calendars.lunardate import LunarDate
 
 # ==================== 1. 屏幕与墨水屏配色 (Kobo Glo 758x1024) ====================
@@ -103,13 +103,19 @@ def generate_calendar_dashboard():
     after_w = daily_data[2] if len(daily_data) > 2 else {}
 
     now = datetime.now()
+    
+    # 农历与生肖转换（已修复属性调用问题）
     lunar = LunarDate.from_solar_date(now.year, now.month, now.day)
     lunar_cn = lunar.strftime("%M月%D")  # 例如：十月初八
     gz_year = lunar.strftime("%G年")      # 例如：丙午年
-    animal = lunar.animal()              # 例如：马
-
-    # 节气计算
-    solar_term = lunar.term() if hasattr(lunar, 'term') else None
+    
+    # animal 是属性不是函数
+    animal = lunar.animal if hasattr(lunar, 'animal') else "未知"
+    
+    # term 也是属性或属性方法，做安全判断
+    solar_term = getattr(lunar, 'term', None)
+    if callable(solar_term):
+        solar_term = solar_term()
     term_str = f" · 【{solar_term}】" if solar_term else ""
 
     # 计算一年中的第几天与周数
