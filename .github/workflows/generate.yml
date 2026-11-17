@@ -2,8 +2,9 @@ name: Generate Daily Weather Image
 
 on:
   schedule:
-    # 每天 UTC 22:30 (北京时间每天 06:30) 运行
-    - cron: '30 22 * * *'
+    # 每天北京时间 06:30、12:30、18:30 各运行一次
+    # UTC 时间对应的分别是: 22:30(前一天), 04:30, 10:30
+    - cron: '30 22,4,10 * * *'
   workflow_dispatch:
 
 permissions:
@@ -19,26 +20,24 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
 
-      - name: 安装依赖与字体
+      - name: 安装依赖与中文字体 (Noto Sans CJK)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcairo2-dev fonts-noto-cjk python3-pip
+          # 安装 fonts-noto-cjk 保证中文字体平滑无乱码
+          sudo apt-get install -y fonts-noto-cjk python3-pip
           python3 -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then python3 -m pip install -r requirements.txt; fi
+          python3 -m pip install requests pillow
 
-      # ----------------- 重点修改就在下面这几行 -----------------
       - name: 运行生成脚本
         env:
-          QWEATHER_KEY: ${{ vars.QWEATHER_KEY }}  # 密匙依然从 Secrets 读取
-          LOCATION_ID: ${{ vars.LOCATION_ID }}       # 👈 这里改成 vars！读取 Repository variables 中的城市代码
+          QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}  # 建议放入 Secrets
+          LOCATION_ID: ${{ vars.LOCATION_ID }}       # 城市 ID
         run: python3 generate.py
-      # --------------------------------------------------------
 
       - name: 检查文件生成情况
         run: |
           echo "=== 检查本地文件 ==="
           ls -lh latest.png || echo "❌ 警告: latest.png 并不存在！"
-          ls -lh archive/ || echo "❌ 警告: archive 目录不存在！"
 
       - name: 提交图片到仓库
         run: |
@@ -46,7 +45,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "⚠️ 暂存区无变动"
           else
-            git commit -m "自动更新天气图片 [skip ci]"
+            git commit -m "自动更新 Kobo 天气图片 [skip ci]"
             CURRENT_BRANCH=$(git branch --show-current)
             [ -z "$CURRENT_BRANCH" ] && CURRENT_BRANCH="main"
             git push origin HEAD:${CURRENT_BRANCH}
