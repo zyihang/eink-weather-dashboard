@@ -2,7 +2,7 @@
 
 # ==================== 配置项 ====================
 IMAGE_URL="https://raw.githubusercontent.com/zyihang/eink-weather-dashboard/main/latest.png"
-SLEEP_INTERVAL=3600  # 1小时唤醒一次
+SLEEP_INTERVAL=21600  # 6小时唤醒一次
 
 WORK_DIR="/mnt/onboard/weather"
 IMG_TMP="${WORK_DIR}/temp.png"
