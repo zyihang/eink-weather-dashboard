@@ -2,10 +2,10 @@ name: Generate Daily Weather Image
 
 on:
   schedule:
-    # 每天北京时间 06:30、12:30、18:30 各运行一次
+    # 每天北京时间 06:30、12:30、18:30 各自动运行一次
     # UTC 时间对应的分别是: 22:30(前一天), 04:30, 10:30
     - cron: '30 22,4,10 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # 支持在 GitHub 页面上手动点击 "Run workflow"
 
 permissions:
   contents: write
@@ -20,35 +20,35 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
 
-      - name: 安装依赖与中文字体 (Noto Sans CJK)
+      - name: 安装 Python 依赖与中文字体 (Noto Sans CJK)
         run: |
           sudo apt-get update
-          # 安装 fonts-noto-cjk 保证中文字体平滑无乱码
           sudo apt-get install -y fonts-noto-cjk python3-pip
           python3 -m pip install --upgrade pip
           python3 -m pip install requests pillow
 
-      - name: 运行生成脚本
+      - name: 运行生成脚本并生成图片
         env:
-          QWEATHER_KEY: ${{ secrets.QWEATHER_KEY }}  # 建议放入 Secrets
-          QWEATHER_HOST: ${{ vars.QWEATHER_HOST }}
-          LOCATION_ID: ${{ vars.LOCATION_ID }}       # 城市 ID
+          # 核心修复：优先从 Variables 读取，同时也兼容 Secrets
+          QWEATHER_KEY: ${{ vars.QWEATHER_KEY || secrets.QWEATHER_KEY }}
+          QWEATHER_HOST: ${{ vars.QWEATHER_HOST || secrets.QWEATHER_HOST }}
+          LOCATION_ID: ${{ vars.LOCATION_ID }}
         run: python3 generate.py
 
       - name: 检查文件生成情况
         run: |
-          echo "=== 检查本地文件 ==="
+          echo "=== 检查本地生成的图片文件 ==="
           ls -lh latest.png || echo "❌ 警告: latest.png 并不存在！"
 
       - name: 提交图片到仓库
         run: |
           git add -f latest.png archive/
           if git diff --staged --quiet; then
-            echo "⚠️ 暂存区无变动"
+            echo "⚠️ 暂存区无变动，跳过提交"
           else
-            git commit -m "自动更新 Kobo 天气图片 [skip ci]"
+            git commit -m "自动更新天气图片 [skip ci]"
             CURRENT_BRANCH=$(git branch --show-current)
             [ -z "$CURRENT_BRANCH" ] && CURRENT_BRANCH="main"
             git push origin HEAD:${CURRENT_BRANCH}
-            echo "=== ✅ 图片与日期文件夹提交成功 ==="
+            echo "=== ✅ 图片与归档文件夹提交成功 ==="
           fi
