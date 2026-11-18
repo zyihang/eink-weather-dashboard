@@ -2,9 +2,8 @@ name: Generate Daily Weather Image
 
 on:
   schedule:
-    # 每天北京时间 06:30、12:30、18:30 各自动运行一次
-    # UTC 时间对应的分别是: 22:30(前一天), 04:30, 10:30
-    - cron: '30 22,4,10 * * *'
+        # 奇数分钟（如第 15 分钟）每 2 小时自动触发一次，避开整点高峰期排队
+    - cron: '15 */2 * * *'
   workflow_dispatch: # 支持在 GitHub Actions 页面上手动点击 "Run workflow"
 
 permissions:
